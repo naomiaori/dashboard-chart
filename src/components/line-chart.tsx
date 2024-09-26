@@ -14,7 +14,7 @@ import { localPoint } from "@visx/event";
 
 import { getDimensions, xAccessor, yAccessor } from "#/utils/line-chart";
 
-interface ILineChart {
+export interface ILineChart {
   value: number;
   time: string;
 }

@@ -1,9 +1,4 @@
-export interface ILineChart {
-  value: number;
-  time: string;
-}
-
-export const data: ILineChart[] = [
+export const data = [
   { time: "10:00", value: 50980.9 },
   { time: "11:00", value: 51980.9 },
   { time: "12:00", value: 55980.9 },

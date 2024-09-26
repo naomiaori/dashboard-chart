@@ -7,7 +7,7 @@ export default function PriceChart() {
       <div className="w-[560px] flex justify-between mb-[1.13rem]">
         <span className="font-bold text-base">BTC-USDT</span>
         <span className="text-[0.625rem] font-500">
-          Liqidation Price : 54330.03
+          Liquidation Price : 54330.03
         </span>
       </div>
       <LineChart
