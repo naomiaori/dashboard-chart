@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --colors-default: 29 27 27;
+    --colors-background: 255 255 255;
+    /* --colors-gray-100: 38 38 38;
+		--colors-gray-200: 75 75 75;
+		--colors-gray-300: 102 102 102;
+		--colors-gray-400: 107 107 107;
+		--colors-gray-500: 131 131 131;
+		--colors-gray-600: 192 192 192;
+		--colors-gray-700: 206 206 206;
+		--colors-gray-800: 246 246 246;
+		--colors-gray-900: 240 240 240; */
+  }
+
+  :root[class~="dark"] {
+    --colors-default: 255 255 255;
+    --colors-background: 0 0 0;
+    /* GRAY */
+    --colors-gray-100: 77 77 77;
+    --colors-gray-200: 207 207 207;
+    --colors-gray-300: 112 112 112;
+    --colors-gray-400: 191 191 191;
+    --colors-gray-500: 209 209 209;
+    --colors-gray-600: 120 120 120;
+    --colors-gray-800: 122 122 122;
+    --colors-gray-900: 80 79 79;
+    --colors-gray-1000: 58 58 58;
+    --colors-gray-1100: 38 38 38;
+    --colors-gray-1200: 147 147 147;
+    /* GREEN */
+    --colors-green-100: 81 185 45;
+    --colors-green-200: 73 166 40;
+    --colors-green-300: 81 185 45;
+    /* RED */
+    --colors-red-100: 255 91 91;
+    --colors-red-200: 220 79 79;
+    /* YELLOW */
+    --colors-yellow: 255 202 67;
+    /* BLUE */
+    --colors-blue: 56 123 201;
+    /* BLACK */
+    --colors-black: 0 0 0;
+  }
+
+  body {
+    @apply bg-background text-default antialiased;
+  }
+}
+
+@layer components {
+  .image-light {
+    @apply dark:hidden;
+  }
+
+  .image-dark {
+    @apply hidden dark:block;
+  }
+
+  .primary-scrollbar-vertical {
+    @apply overflow-y-scroll pr-2 scrollbar scrollbar-thumb-gray-700 scrollbar-thumb-rounded scrollbar-w-1;
+  }
+
+  .primary-scrollbar-horizontal {
+    @apply overflow-x-scroll pb-2 scrollbar scrollbar-thumb-gray-700 scrollbar-thumb-rounded scrollbar-h-1;
+  }
+}

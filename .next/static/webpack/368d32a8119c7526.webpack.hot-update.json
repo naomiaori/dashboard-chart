@@ -1,0 +1,5 @@
+{
+  "c": ["app/page", "app/layout", "webpack"],
+  "r": [],
+  "m": ["(app-pages-browser)/./src/data/line-chart.ts"]
+}
