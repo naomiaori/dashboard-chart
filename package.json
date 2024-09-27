@@ -21,6 +21,7 @@
     "@visx/grid": "^3.5.0",
     "@visx/mock-data": "^3.3.0",
     "@visx/react-spring": "^3.10.1",
+    "@visx/responsive": "^3.10.2",
     "@visx/tooltip": "^3.3.0",
     "framer-motion": "^11.3.21",
     "i18next": "^23.12.2",

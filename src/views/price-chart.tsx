@@ -3,21 +3,17 @@ import { data } from "#/data/line-chart";
 
 export default function PriceChart() {
   return (
-    <section className="w-[37.56rem]  py-6 flex flex-col items-center">
-      <div className="w-[560px] flex justify-between mb-[1.13rem]">
+    <section className="w-[37.56rem] desktop:w-[20rem] px-6 py-6 flex flex-col items-center">
+      <div className="w-full flex justify-between mb-[1.13rem]">
         <span className="font-bold text-base">BTC-USDT</span>
         <span className="text-[0.625rem] font-500">
           Liquidation Price : 54330.03
         </span>
       </div>
-      <LineChart
-        width={560}
-        height={256}
-        data={data}
-        LpValue={52000.5}
-        LatestValue={58000.9}
-      />
-      <div className="w-[560px] flex text-[0.625rem] gap-7 mt-[1.69rem]">
+      <div className="w-full">
+        <LineChart data={data} lpValue={52000.5} latestValue={58000.9} />
+      </div>
+      <div className="w-full flex text-[0.625rem] gap-7 mt-[1.69rem]">
         <div className="flex gap-3">
           <span className="font-bold text-gray-100">USDT</span>
           <span className="text-white">90,000,000 USDT</span>

@@ -1,7 +1,6 @@
 import { timeParse } from "d3-time-format";
 import { ILineChart } from "#/components/line-chart";
 
-
 interface Dimensions {
   margin: {
     top: number;
