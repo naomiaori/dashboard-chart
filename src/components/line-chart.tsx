@@ -1,590 +1,269 @@
 "use client";
 
-import React, { useMemo, useCallback } from "react";
-import { extent, bisector } from "d3-array";
-import { timeFormat } from "d3-time-format";
-import { AxisBottom, AxisRight } from "@visx/axis";
-import { LinePath, Bar } from "@visx/shape";
-import { Group } from "@visx/group";
-import { scaleLinear, scaleTime } from "@visx/scale";
-import { GridRows } from "@visx/grid";
-import { curveLinear } from "@visx/curve";
-import { withTooltip, TooltipWithBounds, defaultStyles } from "@visx/tooltip";
-import { localPoint } from "@visx/event";
-import { ParentSize } from "@visx/responsive";
-
-import { getDimensions, xAccessor, yAccessor } from "#/utils/line-chart";
+import { useEffect, useRef, useState } from "react";
+import { createChart, IChartApi, ISeriesApi, LineWidth, Time } from "lightweight-charts";
+import Socket from "../services/socket";
+import { useRKlines } from "../data/api";
+import debounce from 'lodash/debounce';
+import { TExchange, TInterval, TSymbol, TlpPrice } from "../types/price-chart.type";
 
 export interface ILineChart {
   value: number;
-  time: string;
+  time: Time;
 }
 
-const tooltipStyles = {
-  ...defaultStyles,
-  background: "rgba(0, 0, 0, 0.9)",
-  borderRadius: "4px",
-  color: "white",
+type TTradingView = {
+  exchange: TExchange;
+  symbol: TSymbol;
+  interval: TInterval;
+  lpLinePrice: TlpPrice;
+}
+
+const calculateTimeOffset = (interval: string) => {
+  let offset = 0;
+
+  if (!isNaN(Number(interval))) {
+    const minutes = Number(interval);
+    offset = minutes * 60 * 1000 * 48;
+  } else {
+    switch (interval) {
+      case 'D':
+        offset = 24 * 60 * 60 * 1000 * 48;
+        break;
+      case 'W':
+        offset = 7 * 24 * 60 * 60 * 1000 * 48;
+        break;
+      case 'M':
+        offset = 30 * 24 * 60 * 60 * 1000 * 48;
+        break;
+      default:
+        offset = 24 * 60 * 60 * 1000 * 48;
+    }
+  }
+
+  return offset;
 };
 
-const bisectDate = bisector<ILineChart, Date>((d) => xAccessor(d)).left;
+const TradingViewChart: React.FC<TTradingView> = ({ exchange, symbol, interval, lpLinePrice }) => {
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const [chartData, setChartData] = useState<ILineChart[]>([]);
+  const [isFetching, setIsFetching] = useState(false); 
+  const offset = calculateTimeOffset(interval);
+  const [startTime, setStartTime] = useState(Date.now() - offset); 
+  const [endTime, setEndTime] = useState(Date.now());
+  const socketUrl = "wss://stream.bybit.com/v5/public/spot";
 
-type Props = {
-  data?: ILineChart[];
-  lpValue?: number;
-  latestValue?: number;
-  lineColor?: string;
-};
+  const { data: historicalData, isFetched, refetchWithParams } = useRKlines({
+    exchange,
+    symbol,
+    interval,
+    start: startTime,
+    end: endTime,
+  });
 
-function LineChart({
-  showTooltip,
-  hideTooltip,
-  tooltipData,
-  tooltipLeft,
-  tooltipTop,
-  data,
-  lpValue,
-  latestValue,
-  lineColor = "#FFCA43",
-}: Props & any) {
-  return (
-    <ParentSize>
-      {({ width, height }) => {
-        const { margin, boundedWidth, boundedHeight } = getDimensions({
-          width,
-          height,
+  useEffect(() => {
+    const chartOptions = {
+      layout: {
+        fontFamily: 'Fira Mono, monospace',
+        fontSize: 9,
+        textColor: '#A6A6A6',
+        background: { color: 'black' },
+      },
+      height: 240,
+      grid: {
+        vertLines: {
+          color: 'transparent',
+        },
+        horzLines: {
+          style: 1,
+          color: '#262626',
+        },
+      },
+
+      timeScale: {
+        rightOffset: 8,
+        barSpacing: 15,
+        timeVisible: true,
+        secondsVisible: false,
+        uniformDistribution: true,
+      },
+      
+      leftPriceScale: {
+        borderColor: 'transparent',
+      },
+      rightPriceScale: {
+        borderColor: 'transparent',
+      },
+    };
+
+    if (chartContainerRef.current) {
+      chartRef.current = createChart(chartContainerRef.current, chartOptions);
+      lineSeriesRef.current = chartRef.current.addLineSeries({
+        priceLineVisible: false,
+        color: '#FFCA43', 
+        lineWidth: 1,      
+      });
+
+      const lpLine = {
+        price: lpLinePrice,
+        color: '#FFFFFFB3',
+        lineWidth: 1 as LineWidth,
+        lineStyle: 3,
+        axisLabelVisible: true,
+        axisLabelColor: 'gray',
+        title: 'LP',
+      };
+
+      lineSeriesRef.current.createPriceLine(lpLine);
+    }
+  }, [lpLinePrice]);
+
+  // useEffect(() => {
+  //   if (lineSeriesRef.current && isFetched && historicalData) {
+  //     const sortedData = historicalData.sort((a: (string | number)[], b: (string | number)[]) => {
+  //       const timeA = Number(a[0]);
+  //       const timeB = Number(b[0]);
+  //       return timeA - timeB;
+  //     });
+  
+  //     const formattedData = sortedData.map((kline: (string | number)[]) => {
+  //       const originalTimestamp = Math.floor(Number(kline[0]) / 1000); 
+  //       const kstTimestamp = originalTimestamp + 9 * 60 * 60;
+  
+  //       return {
+  //         time: kstTimestamp as Time, 
+  //         value: parseFloat(kline[4] as string),
+  //       };
+  //     });
+  
+  //     const combinedData = [...formattedData, ...chartData]
+  //       .reduce((acc, curr) => {
+  //         const existing = acc.find((item: ILineChart) => item.time === curr.time);
+  //         if (!existing) {
+  //           acc.push(curr);
+  //         }
+  //         return acc;
+  //       }, [] as ILineChart[])
+  //       .sort((a: ILineChart, b: ILineChart) => (a.time as number) - (b.time as number));
+        
+  
+  //     setChartData(combinedData); 
+  //     lineSeriesRef.current.setData(combinedData);
+  //   }
+  // }, [isFetched, historicalData]);
+
+  useEffect(() => {
+    if (lineSeriesRef.current && isFetched && historicalData) {
+      const sortedData = historicalData.sort((a: IUnifiedKlineData, b: IUnifiedKlineData) => {
+        const timeA = Number(a.openTime);
+        const timeB = Number(b.openTime);
+        return timeA - timeB;
+      });
+  
+      const formattedData = sortedData.map((kline: IUnifiedKlineData) => {
+        const originalTimestamp = Math.floor(Number(kline.openTime) / 1000); 
+        if (isNaN(originalTimestamp)) {
+          console.error("Invalid timestamp detected:", kline);
+          return null;
+        }
+        
+        const kstTimestamp = originalTimestamp + 9 * 60 * 60; // Korean time
+  
+        return {
+          time: kstTimestamp as Time, 
+          value: parseFloat(kline.close),
+        };
+      }).filter(data => data !== null); 
+  
+      const combinedData = [...formattedData, ...chartData]
+        .reduce((acc, curr) => {
+          const existing = acc.find((item: ILineChart) => item.time === curr.time);
+          if (!existing) {
+            acc.push(curr);
+          }
+          return acc;
+        }, [] as ILineChart[])
+        .sort((a: ILineChart, b: ILineChart) => (a.time as number) - (b.time as number));
+  
+      if (combinedData.length > 0) {
+        setChartData(combinedData); 
+        lineSeriesRef.current.setData(combinedData);
+      }
+    }
+  }, [isFetched, historicalData]);
+  
+
+  useEffect(() => {
+    const socket = new Socket(socketUrl);
+  
+    socket.setReceiveCallback((message) => {
+      if (message && message.data && message.data.length > 0) {
+        const kline = message.data[0];
+        const originalTimestamp = Math.floor(kline.timestamp / 1000);
+        const kstTimestamp = originalTimestamp + 9 * 60 * 60;
+        const alignedTime = Math.floor(kstTimestamp / 3600) * 3600;
+  
+        const formattedData = {
+          time: alignedTime as Time,
+          value: parseFloat(kline.close),
+        };
+  
+        setChartData((prevData) => {
+          const lastDataPoint = prevData[prevData.length - 1];
+          if (lastDataPoint && lastDataPoint.time === formattedData.time) {
+            const updatedData = [...prevData];
+            updatedData[updatedData.length - 1] = formattedData;
+            lineSeriesRef.current?.setData(updatedData);
+            return updatedData;
+          }
+  
+          const newData = [...prevData, formattedData];
+          lineSeriesRef.current?.setData(newData);
+          return newData;
         });
+      }
+    });
+  
+    socket.connect();
+    socket.subscribe(`kline.${interval}.${symbol}`);
+  
+    return () => {
+      socket.disconnect();
+    };
+  }, [interval, symbol]);
 
-        const xScale = useMemo(
-          () =>
-            scaleTime({
-              domain: extent(data, xAccessor) as [Date, Date],
-              range: [0, boundedWidth],
-              nice: true,
-            }),
-          [data, boundedWidth],
-        );
+  const handleVisibleRangeChange = debounce(() => {
+    if (isFetching) return;
 
-        const yScale = useMemo(
-          () =>
-            scaleLinear({
-              domain: extent(data, yAccessor) as [number, number],
-              range: [boundedHeight, 0],
-              nice: true,
-            }),
-          [data, boundedHeight],
-        );
+    const logicalRange = chartRef.current?.timeScale().getVisibleLogicalRange();
+    if (logicalRange && logicalRange.from < 0) {
+      const newStartTime = startTime - offset;
+      console.log("Fetching earlier data:", new Date(newStartTime), "to", new Date(startTime));
+      setIsFetching(true);
+      setStartTime(newStartTime);
 
-        const handleTooltip = useCallback(
-          (event: React.MouseEvent<SVGRectElement>) => {
-            const { x } = localPoint(event) || { x: 0 };
-            const x0 = xScale.invert(x);
-            const index = bisectDate(data, x0, 1);
-            const d0 = data[index - 1];
-            const d1 = data[index];
-            let d = d0;
-            if (d1 && xAccessor(d1)) {
-              d =
-                x0.valueOf() - xAccessor(d0).valueOf() >
-                xAccessor(d1).valueOf() - x0.valueOf()
-                  ? d1
-                  : d0;
-            }
-            showTooltip({
-              tooltipData: d,
-              tooltipLeft: x,
-              tooltipTop: yScale(yAccessor(d)),
-            });
-          },
-          [showTooltip, yScale, xScale, data],
-        );
+      refetchWithParams(newStartTime, endTime).finally(() => {
+        setIsFetching(false);
+        setEndTime(startTime);
+      });
+    }
+  }, 300);
 
-        const customYPosition = yScale(lpValue);
-        const yTickValues = yScale.ticks(8);
+  useEffect(() => {
+    chartRef.current?.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
 
-        if (!yTickValues.includes(lpValue)) {
-          yTickValues.push(lpValue);
-        }
-        if (!yTickValues.includes(latestValue)) {
-          yTickValues.push(latestValue);
-        }
+    return () => {
+      chartRef.current?.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    };
+  }, [startTime, isFetching]);
 
-        return (
-          <div className="w-fit">
-            <svg width={width} height={height} role="figure">
-              <rect
-                x={0}
-                y={0}
-                width={width}
-                height={height}
-                fill="transparent"
-              />
-              <Group top={margin.top} left={margin.left}>
-                <GridRows
-                  scale={yScale}
-                  width={boundedWidth}
-                  strokeDasharray="1,3"
-                  stroke="#262626"
-                  pointerEvents="none"
-                />
-                <LinePath<ILineChart>
-                  curve={curveLinear}
-                  data={data}
-                  stroke={lineColor}
-                  strokeWidth={1.5}
-                  x={(d: ILineChart) => xScale(xAccessor(d)) ?? 0}
-                  y={(d: ILineChart) => yScale(yAccessor(d)) ?? 0}
-                />
-                <Bar
-                  x={0}
-                  y={0}
-                  width={boundedWidth}
-                  height={boundedHeight}
-                  fill="transparent"
-                  onMouseMove={handleTooltip}
-                  onMouseLeave={hideTooltip}
-                />
-                {customYPosition && (
-                  <line
-                    x1={0}
-                    x2={boundedWidth}
-                    y1={customYPosition}
-                    y2={customYPosition}
-                    stroke="white"
-                    strokeWidth={1}
-                    strokeDasharray="3,5"
-                  />
-                )}
-                <AxisRight
-                  left={boundedWidth + margin.right - 40}
-                  scale={yScale}
-                  top={0}
-                  hideAxisLine={true}
-                  hideTicks={true}
-                  tickValues={yTickValues}
-                  tickFormat={(value) => `${Number(value).toFixed(1)}`}
-                  tickComponent={({ formattedValue, x, y }) => {
-                    const numFormattedValue = Number(formattedValue);
-                    const islpValue = numFormattedValue === lpValue;
-                    const islatestValue = numFormattedValue === latestValue;
-
-                    const text = islpValue
-                      ? `LP ${lpValue.toFixed(1)}`
-                      : islatestValue
-                        ? `${latestValue.toFixed(1)}`
-                        : formattedValue || "";
-
-                    const paddingX = 8;
-                    const paddingY = 2;
-                    const fontSize = 9;
-
-                    const textWidth = text.length * (fontSize * 0.6);
-                    const rectWidth = textWidth + paddingX;
-                    const rectHeight = fontSize + paddingY;
-
-                    if (islpValue) {
-                      return (
-                        <g transform={`translate(${4},${y})`}>
-                          <rect
-                            x={-rectWidth / 2}
-                            y={-rectHeight / 2}
-                            width={rectWidth}
-                            height={rectHeight}
-                            fill="#4d4d4d"
-                            rx={0}
-                          />
-                          <text
-                            fill="white"
-                            fontSize={fontSize}
-                            textAnchor="middle"
-                            dy="0.32em"
-                            x={0}
-                          >
-                            LP {lpValue.toFixed(1)}
-                          </text>
-                        </g>
-                      );
-                    } else if (islatestValue) {
-                      return (
-                        <g transform={`translate(${-5},${y})`}>
-                          <rect
-                            x={-rectWidth / 2}
-                            y={-rectHeight / 2}
-                            width={rectWidth}
-                            height={rectHeight}
-                            fill="white"
-                            rx={0}
-                          />
-                          <text
-                            fill="black"
-                            fontWeight="700"
-                            fontSize={fontSize}
-                            textAnchor="middle"
-                            dy="0.32em"
-                            x={0}
-                          >
-                            {latestValue.toFixed(1)}
-                          </text>
-                        </g>
-                      );
-                    } else {
-                      return (
-                        <text
-                          fill="#A6A6A6"
-                          fontSize={fontSize}
-                          textAnchor="end"
-                          dy="0.32em"
-                          x={10}
-                          y={y}
-                        >
-                          {formattedValue}
-                        </text>
-                      );
-                    }
-                  }}
-                />
-                <AxisBottom
-                  rangePadding={41}
-                  top={boundedHeight}
-                  hideAxisLine={true}
-                  hideTicks={true}
-                  scale={xScale}
-                  tickFormat={(d) =>
-                    d instanceof Date ? timeFormat("%H:%M")(d) : ""
-                  }
-                  tickLabelProps={() => ({
-                    fill: "white",
-                    fontSize: 8,
-                    textAnchor: "middle",
-                  })}
-                />
-              </Group>
-              {tooltipData && (
-                <g>
-                  <circle
-                    cx={tooltipLeft}
-                    cy={tooltipTop + 10}
-                    r={4}
-                    fill="white"
-                    stroke="white"
-                    strokeWidth={1}
-                  />
-                </g>
-              )}
-            </svg>
-            {tooltipData && (
-              <div>
-                <TooltipWithBounds
-                  top={tooltipTop}
-                  left={tooltipLeft}
-                  style={tooltipStyles}
-                >
-                  {`Value: ${yAccessor(tooltipData)}`}
-                </TooltipWithBounds>
-              </div>
-            )}
-          </div>
-        );
-      }}
-    </ParentSize>
+  return (
+    <div className="">
+      <div ref={chartContainerRef} />
+    </div>
   );
-}
+};
 
-export default withTooltip(LineChart);
-
-// "use client";
-
-// import React, { useMemo, useCallback } from "react";
-// import { extent, bisector } from "d3-array";
-// import { timeFormat } from "d3-time-format";
-// import { AxisBottom, AxisRight } from "@visx/axis";
-// import { LinePath, Bar } from "@visx/shape";
-// import { Group } from "@visx/group";
-// import { scaleLinear, scaleTime } from "@visx/scale";
-// import { GridRows } from "@visx/grid";
-// import { curveLinear } from "@visx/curve";
-// import { withTooltip, TooltipWithBounds, defaultStyles } from "@visx/tooltip";
-// import { localPoint } from "@visx/event";
-// import { ParentSize } from "@visx/responsive";
-
-// import { getDimensions, xAccessor, yAccessor } from "#/utils/line-chart";
-
-// export interface ILineChart {
-//   value: number;
-//   time: string;
-// }
-
-// const tooltipStyles = {
-//   ...defaultStyles,
-//   background: "rgba(0, 0, 0, 0.9)",
-//   borderRadius: "4px",
-//   color: "white",
-// };
-
-// const bisectDate = bisector<ILineChart, Date>((d) => xAccessor(d)).left;
-
-// type Props = {
-//   data?: ILineChart[];
-//   lpValue?: number;
-//   latestValue?: number;
-//   lineColor?: string;
-// };
-
-// function LineChart({
-//   showTooltip,
-//   hideTooltip,
-//   tooltipData,
-//   tooltipLeft,
-//   tooltipTop,
-//   data,
-//   lpValue,
-//   latestValue,
-//   lineColor = "#FFCA43",
-// }: Props & any) {
-//   return (
-//     <ParentSize>
-//       {({ width }) => {
-//         // Set a fixed height, like 300px (you can adjust this)
-//         const height = 300;
-
-//         const { margin, boundedWidth, boundedHeight } = getDimensions({
-//           width,
-//           height,
-//         });
-
-//         const xScale = useMemo(
-//           () =>
-//             scaleTime({
-//               domain: extent(data, xAccessor) as [Date, Date],
-//               range: [0, boundedWidth],
-//               nice: true,
-//             }),
-//           [data, boundedWidth],
-//         );
-
-//         const yScale = useMemo(
-//           () =>
-//             scaleLinear({
-//               domain: extent(data, yAccessor) as [number, number],
-//               range: [boundedHeight, 0],
-//               nice: true,
-//             }),
-//           [data, boundedHeight],
-//         );
-
-//         const handleTooltip = useCallback(
-//           (event: React.MouseEvent<SVGRectElement>) => {
-//             const { x } = localPoint(event) || { x: 0 };
-//             const x0 = xScale.invert(x);
-//             const index = bisectDate(data, x0, 1);
-//             const d0 = data[index - 1];
-//             const d1 = data[index];
-//             let d = d0;
-//             if (d1 && xAccessor(d1)) {
-//               d =
-//                 x0.valueOf() - xAccessor(d0).valueOf() >
-//                 xAccessor(d1).valueOf() - x0.valueOf()
-//                   ? d1
-//                   : d0;
-//             }
-//             showTooltip({
-//               tooltipData: d,
-//               tooltipLeft: x,
-//               tooltipTop: yScale(yAccessor(d)),
-//             });
-//           },
-//           [showTooltip, yScale, xScale, data],
-//         );
-
-//         const customYPosition = yScale(lpValue);
-//         const yTickValues = yScale.ticks(8);
-
-//         if (!yTickValues.includes(lpValue)) {
-//           yTickValues.push(lpValue);
-//         }
-//         if (!yTickValues.includes(latestValue)) {
-//           yTickValues.push(latestValue);
-//         }
-
-//         return (
-//           <div className="w-full">
-//             <svg width={width} height={height} role="figure">
-//               <rect
-//                 x={0}
-//                 y={0}
-//                 width={width}
-//                 height={height}
-//                 fill="transparent"
-//               />
-//               <Group top={margin.top} left={margin.left}>
-//                 <GridRows
-//                   scale={yScale}
-//                   width={boundedWidth}
-//                   strokeDasharray="1,3"
-//                   stroke="#262626"
-//                   pointerEvents="none"
-//                 />
-//                 <LinePath<ILineChart>
-//                   curve={curveLinear}
-//                   data={data}
-//                   stroke={lineColor}
-//                   strokeWidth={1.5}
-//                   x={(d: ILineChart) => xScale(xAccessor(d)) ?? 0}
-//                   y={(d: ILineChart) => yScale(yAccessor(d)) ?? 0}
-//                 />
-//                 <Bar
-//                   x={0}
-//                   y={0}
-//                   width={boundedWidth}
-//                   height={boundedHeight}
-//                   fill="transparent"
-//                   onMouseMove={handleTooltip}
-//                   onMouseLeave={hideTooltip}
-//                 />
-//                 {customYPosition && (
-//                   <line
-//                     x1={0}
-//                     x2={boundedWidth}
-//                     y1={customYPosition}
-//                     y2={customYPosition}
-//                     stroke="white"
-//                     strokeWidth={1}
-//                     strokeDasharray="3,5"
-//                   />
-//                 )}
-//                 <AxisRight
-//                   left={boundedWidth + margin.right - 40}
-//                   scale={yScale}
-//                   top={0}
-//                   hideAxisLine={true}
-//                   hideTicks={true}
-//                   tickValues={yTickValues}
-//                   tickFormat={(value) => `${Number(value).toFixed(1)}`}
-//                   tickComponent={({ formattedValue, x, y }) => {
-//                     const numFormattedValue = Number(formattedValue);
-//                     const islpValue = numFormattedValue === lpValue;
-//                     const islatestValue = numFormattedValue === latestValue;
-
-//                     const text = islpValue
-//                       ? `LP ${lpValue.toFixed(1)}`
-//                       : islatestValue
-//                         ? `${latestValue.toFixed(1)}`
-//                         : formattedValue || "";
-
-//                     const paddingX = 8;
-//                     const paddingY = 2;
-//                     const fontSize = 9;
-
-//                     const textWidth = text.length * (fontSize * 0.6);
-//                     const rectWidth = textWidth + paddingX;
-//                     const rectHeight = fontSize + paddingY;
-
-//                     if (islpValue) {
-//                       return (
-//                         <g transform={`translate(${4},${y})`}>
-//                           <rect
-//                             x={-rectWidth / 2}
-//                             y={-rectHeight / 2}
-//                             width={rectWidth}
-//                             height={rectHeight}
-//                             fill="#4d4d4d"
-//                             rx={0}
-//                           />
-//                           <text
-//                             fill="white"
-//                             fontSize={fontSize}
-//                             textAnchor="middle"
-//                             dy="0.32em"
-//                             x={0}
-//                           >
-//                             LP {lpValue.toFixed(1)}
-//                           </text>
-//                         </g>
-//                       );
-//                     } else if (islatestValue) {
-//                       return (
-//                         <g transform={`translate(${-5},${y})`}>
-//                           <rect
-//                             x={-rectWidth / 2}
-//                             y={-rectHeight / 2}
-//                             width={rectWidth}
-//                             height={rectHeight}
-//                             fill="white"
-//                             rx={0}
-//                           />
-//                           <text
-//                             fill="black"
-//                             fontWeight="700"
-//                             fontSize={fontSize}
-//                             textAnchor="middle"
-//                             dy="0.32em"
-//                             x={0}
-//                           >
-//                             {latestValue.toFixed(1)}
-//                           </text>
-//                         </g>
-//                       );
-//                     } else {
-//                       return (
-//                         <text
-//                           fill="#A6A6A6"
-//                           fontSize={fontSize}
-//                           textAnchor="end"
-//                           dy="0.32em"
-//                           x={10}
-//                           y={y}
-//                         >
-//                           {formattedValue}
-//                         </text>
-//                       );
-//                     }
-//                   }}
-//                 />
-//                 <AxisBottom
-//                   rangePadding={41}
-//                   top={boundedHeight}
-//                   hideAxisLine={true}
-//                   hideTicks={true}
-//                   scale={xScale}
-//                   tickFormat={(d) =>
-//                     d instanceof Date ? timeFormat("%H:%M")(d) : ""
-//                   }
-//                   tickLabelProps={() => ({
-//                     fill: "white",
-//                     fontSize: 8,
-//                     textAnchor: "middle",
-//                   })}
-//                 />
-//               </Group>
-//               {tooltipData && (
-//                 <g>
-//                   <circle
-//                     cx={tooltipLeft}
-//                     cy={tooltipTop + 10}
-//                     r={4}
-//                     fill="white"
-//                     stroke="white"
-//                     strokeWidth={1}
-//                   />
-//                 </g>
-//               )}
-//             </svg>
-//             {tooltipData && (
-//               <div>
-//                 <TooltipWithBounds
-//                   top={tooltipTop}
-//                   left={tooltipLeft}
-//                   style={tooltipStyles}
-//                 >
-//                   {`Value: ${yAccessor(tooltipData)}`}
-//                 </TooltipWithBounds>
-//               </div>
-//             )}
-//           </div>
-//         );
-//       }}
-//     </ParentSize>
-//   );
-// }
-
-// export default withTooltip(LineChart);
+export default TradingViewChart;
