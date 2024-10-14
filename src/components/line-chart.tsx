@@ -16,7 +16,7 @@ import {
   TSymbol,
   TlpPrice,
 } from "#/types/price-chart.type";
-import { useRHistoricalKlines } from "../services/historical-klines/useRHistoricalKline";
+import { useRHistoricalKlines } from "#/services/historical-klines/useRHistoricalKline";
 export interface ILineChart {
   value: number;
   time: Time;
@@ -142,7 +142,7 @@ const TradingViewChart: React.FC<TTradingView> = ({
   useEffect(() => {
     if (lineSeriesRef.current && isFetched && historicalData) {
       const sortedData = historicalData.sort(
-        (a: IUnifiedKlineData, b: IUnifiedKlineData) => {
+        (a: { openTime: number }, b: { openTime: number }) => {
           const timeA = Number(a.openTime);
           const timeB = Number(b.openTime);
           return timeA - timeB;
@@ -150,7 +150,7 @@ const TradingViewChart: React.FC<TTradingView> = ({
       );
 
       const formattedData = sortedData
-        .map((kline: IUnifiedKlineData) => {
+        .map((kline: { openTime: number; close: string }) => {
           const originalTimestamp = Math.floor(Number(kline.openTime) / 1000);
           if (isNaN(originalTimestamp)) {
             console.error("Invalid timestamp detected:", kline);
@@ -164,7 +164,7 @@ const TradingViewChart: React.FC<TTradingView> = ({
             value: parseFloat(kline.close),
           };
         })
-        .filter((data) => data !== null);
+        .filter((data: ILineChart | null): data is ILineChart => data !== null);
 
       const combinedData = [...formattedData, ...chartData]
         .reduce((acc, curr) => {
@@ -242,10 +242,9 @@ const TradingViewChart: React.FC<TTradingView> = ({
       setIsFetching(true);
       setStartTime(newStartTime);
 
-      refetchWithParams(newStartTime, endTime).finally(() => {
-        setIsFetching(false);
-        setEndTime(startTime);
-      });
+      refetchWithParams(newStartTime.toString(), endTime.toString());
+      setIsFetching(false);
+      setEndTime(startTime);
     }
   }, 300);
 
