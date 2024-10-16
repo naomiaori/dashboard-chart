@@ -32,8 +32,7 @@
     --colors-gray-1000: 58 58 58;
     --colors-gray-1100: 38 38 38;
     --colors-gray-1200: 147 147 147;
-    /* GREEN */
-    --colors-green-100: 81 185 45;
+    --colors-gray-1300: 166 166 166 /* GREEN */ --colors-green-100: 81 185 45;
     --colors-green-200: 73 166 40;
     --colors-green-300: 81 185 45;
     /* RED */

@@ -46,6 +46,7 @@ const tailwindConfig = {
           1000: "rgb(var(--colors-gray-1000) / <alpha-value>)",
           1100: "rgb(var(--colors-gray-1100) / <alpha-value>)",
           1200: "rgb(var(--colors-gray-1200) / <alpha-value>)",
+          1300: "rgb(var(--colors-gray-1300) / <alpha-value>)",
         },
       },
       backgroundImage: {

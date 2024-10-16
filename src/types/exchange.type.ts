@@ -1,1 +1,1 @@
-export type TExchange = "BYBIT" | "OKX" | "BINANCE" | "BITGET" | "BITHUMB";
+export type TExchange = "BYBIT" | "BINANCE";

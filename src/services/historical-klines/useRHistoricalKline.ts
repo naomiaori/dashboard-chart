@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { historicalKlinesKeys } from "#/services/historical-klines/keys";
 import { getHistoricalKlinesMap } from "#/services/historical-klines/queryFn";
-import { TExchange, TInterval, TSymbol } from "#/src/types/price-chart.type";
+import { TInterval, TSymbol } from "#/src/types/price-chart.type";
+import { TExchange } from "#/src/types/exchange.type";
 
 export type THistoricalKlinesArgs = {
   exchange: TExchange;

@@ -1,6 +1,7 @@
 import axios from "axios";
-import { TExchange, TInterval, TSymbol } from "#/types/price-chart.type";
+import { TInterval, TSymbol } from "#/types/price-chart.type";
 import { EXCHANGE_API_URL_MAP } from "#/constants/apis";
+import { TExchange } from "#/src/types/exchange.type";
 
 export type TGetKlinesArgs = {
   symbol: TSymbol;
@@ -44,13 +45,12 @@ const getBybitKlines = async ({
     closeTime: Number(kline[6]),
   }));
 };
-
 const getBinanceKlines = async ({
   symbol,
   interval,
   start,
   end,
-  limit = 500,
+  limit = 1500,
 }: TGetKlinesArgs) => {
   const response = await axios.get(
     `${EXCHANGE_API_URL_MAP.BINANCE}/api/v3/klines`,
@@ -60,7 +60,7 @@ const getBinanceKlines = async ({
         interval,
         startTime: start,
         endTime: end,
-        limit,
+        //   limit,
       },
     },
   );
@@ -82,19 +82,4 @@ export const getHistoricalKlinesMap: Record<
 > = {
   BYBIT: getBybitKlines,
   BINANCE: getBinanceKlines,
-  OKX: function (args: TGetKlinesArgs): Promise<any> {
-    throw new Error("Function not implemented.");
-  },
-  BITGET: function (args: TGetKlinesArgs): Promise<any> {
-    throw new Error("Function not implemented.");
-  },
-  MEXC: function (args: TGetKlinesArgs): Promise<any> {
-    throw new Error("Function not implemented.");
-  },
-  KUCOIN: function (args: TGetKlinesArgs): Promise<any> {
-    throw new Error("Function not implemented.");
-  },
-  BITHUMB: function (args: TGetKlinesArgs): Promise<any> {
-    throw new Error("Function not implemented.");
-  },
 };

@@ -1,75 +1,57 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
-import {
-  createChart,
-  IChartApi,
-  ISeriesApi,
-  LineWidth,
-  Time,
-} from "lightweight-charts";
-import Socket from "#/services/socket";
+import { createChart, IChartApi, ISeriesApi, LineWidth, Time } from "lightweight-charts";
 import debounce from "lodash/debounce";
-import {
-  TExchange,
-  TInterval,
-  TSymbol,
-  TlpPrice,
-} from "#/types/price-chart.type";
 import { useRHistoricalKlines } from "#/services/historical-klines/useRHistoricalKline";
+import { usePriceChartContext } from "#/providers/price-chart/context";
+import { useQuery } from "@tanstack/react-query";
+import { TInterval, TSelectedInterval, TSymbol } from "#/types/price-chart.type";
+import { TExchange } from "#/types/exchange.type";
+
 export interface ILineChart {
   value: number;
   time: Time;
+}
+
+interface IKlineWebsocket {
+  time: number;
+  close: string;
 }
 
 type TTradingView = {
   exchange: TExchange;
   symbol: TSymbol;
   interval: TInterval;
-  lpLinePrice: TlpPrice;
+  lpLinePrice: number;
+  offsetInterval: TSelectedInterval;
 };
 
-const calculateTimeOffset = (interval: string) => {
-  let offset = 0;
-
-  if (!isNaN(Number(interval))) {
-    const minutes = Number(interval);
-    offset = minutes * 60 * 1000 * 48;
-  } else {
-    switch (interval) {
-      case "D":
-        offset = 24 * 60 * 60 * 1000 * 48;
-        break;
-      case "W":
-        offset = 7 * 24 * 60 * 60 * 1000 * 48;
-        break;
-      case "M":
-        offset = 30 * 24 * 60 * 60 * 1000 * 48;
-        break;
-      default:
-        offset = 24 * 60 * 60 * 1000 * 48;
-    }
-  }
-
-  return offset;
+const calculateTimeOffset = (offsetInterval: TSelectedInterval) => {
+  const offsets = {
+    one_hour: 60 * 60 * 1000 * 48,
+    four_hour: 4 * 60 * 60 * 1000 * 48,
+    day: 24 * 60 * 60 * 1000 * 48,
+    week: 7 * 24 * 60 * 60 * 1000 * 48,
+  };
+  return offsets[offsetInterval] || offsets['one_hour'];
 };
 
 const TradingViewChart: React.FC<TTradingView> = ({
-  exchange,
-  symbol,
-  interval,
   lpLinePrice,
+  offsetInterval,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const [chartData, setChartData] = useState<ILineChart[]>([]);
   const [isFetching, setIsFetching] = useState(false);
-  const offset = calculateTimeOffset(interval);
+
+  const { socketInstance, symbol, exchange, interval } = usePriceChartContext();
+
+  const offset = calculateTimeOffset(offsetInterval);
   const [startTime, setStartTime] = useState(Date.now() - offset);
   const [endTime, setEndTime] = useState(Date.now());
-  const socketUrl = "wss://stream.bybit.com/v5/public/spot";
 
+  // Fetch historical klines using React Query
   const {
     data: historicalData,
     isFetched,
@@ -82,6 +64,7 @@ const TradingViewChart: React.FC<TTradingView> = ({
     end: endTime.toString(),
   });
 
+  // Setup chart
   useEffect(() => {
     const chartOptions = {
       layout: {
@@ -100,7 +83,6 @@ const TradingViewChart: React.FC<TTradingView> = ({
           color: "#262626",
         },
       },
-
       timeScale: {
         rightOffset: 8,
         barSpacing: 15,
@@ -108,7 +90,6 @@ const TradingViewChart: React.FC<TTradingView> = ({
         secondsVisible: false,
         uniformDistribution: true,
       },
-
       leftPriceScale: {
         borderColor: "transparent",
       },
@@ -140,32 +121,41 @@ const TradingViewChart: React.FC<TTradingView> = ({
   }, [lpLinePrice]);
 
   useEffect(() => {
+    const offset = calculateTimeOffset(offsetInterval);
+    setStartTime(Date.now() - offset);
+    setEndTime(Date.now());
+    setChartData([]);
+    // Clear existing data in the chart series
+    if (lineSeriesRef.current) {
+      lineSeriesRef.current.setData([]);
+    }
+  }, [interval, socketInstance, symbol]);
+
+  // Process historical data when fetched
+  useEffect(() => {
     if (lineSeriesRef.current && isFetched && historicalData) {
       const sortedData = historicalData.sort(
-        (a: { openTime: number }, b: { openTime: number }) => {
-          const timeA = Number(a.openTime);
-          const timeB = Number(b.openTime);
-          return timeA - timeB;
-        },
+        (a: { openTime: number }, b: { openTime: number }) =>
+          a.openTime - b.openTime,
       );
 
       const formattedData = sortedData
         .map((kline: { openTime: number; close: string }) => {
-          const originalTimestamp = Math.floor(Number(kline.openTime) / 1000);
-          if (isNaN(originalTimestamp)) {
-            console.error("Invalid timestamp detected:", kline);
-            return null;
-          }
-
-          const kstTimestamp = originalTimestamp + 9 * 60 * 60; // Korean time
-
+          // Convert to  Koran time
+          const originalTimestamp = Math.floor(kline.openTime / 1000);
+          const kstTimestamp = originalTimestamp + 9 * 60 * 60;
+          const alignedTime = Math.floor(kstTimestamp / 3600) * 3600;
           return {
-            time: kstTimestamp as Time,
+            time: alignedTime as Time,
             value: parseFloat(kline.close),
           };
         })
-        .filter((data: ILineChart | null): data is ILineChart => data !== null);
+        .filter(
+          (item: ILineChart) =>
+            !isNaN(item.time as number) && !isNaN(item.value),
+        );
 
+      // Combine data, avoid duplicates, and ensure sorted order
       const combinedData = [...formattedData, ...chartData]
         .reduce((acc, curr) => {
           const existing = acc.find(
@@ -183,62 +173,16 @@ const TradingViewChart: React.FC<TTradingView> = ({
 
       if (combinedData.length > 0) {
         setChartData(combinedData);
-        lineSeriesRef.current.setData(combinedData);
+        lineSeriesRef.current.setData(combinedData); // Ensure data is sorted
       }
     }
   }, [isFetched, historicalData]);
 
-  useEffect(() => {
-    const socket = new Socket(socketUrl);
-
-    socket.setReceiveCallback((message) => {
-      if (message && message.data && message.data.length > 0) {
-        const kline = message.data[0];
-        const originalTimestamp = Math.floor(kline.timestamp / 1000);
-        const kstTimestamp = originalTimestamp + 9 * 60 * 60;
-        const alignedTime = Math.floor(kstTimestamp / 3600) * 3600;
-
-        const formattedData = {
-          time: alignedTime as Time,
-          value: parseFloat(kline.close),
-        };
-
-        setChartData((prevData) => {
-          const lastDataPoint = prevData[prevData.length - 1];
-          if (lastDataPoint && lastDataPoint.time === formattedData.time) {
-            const updatedData = [...prevData];
-            updatedData[updatedData.length - 1] = formattedData;
-            lineSeriesRef.current?.setData(updatedData);
-            return updatedData;
-          }
-
-          const newData = [...prevData, formattedData];
-          lineSeriesRef.current?.setData(newData);
-          return newData;
-        });
-      }
-    });
-
-    socket.connect();
-    socket.subscribe(`kline.${interval}.${symbol}`);
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [interval, symbol]);
-
   const handleVisibleRangeChange = debounce(() => {
     if (isFetching) return;
-
     const logicalRange = chartRef.current?.timeScale().getVisibleLogicalRange();
     if (logicalRange && logicalRange.from < 0) {
       const newStartTime = startTime - offset;
-      console.log(
-        "Fetching earlier data:",
-        new Date(newStartTime),
-        "to",
-        new Date(startTime),
-      );
       setIsFetching(true);
       setStartTime(newStartTime);
 
@@ -260,11 +204,46 @@ const TradingViewChart: React.FC<TTradingView> = ({
     };
   }, [startTime, isFetching]);
 
-  return (
-    <div className="">
-      <div ref={chartContainerRef} />
-    </div>
-  );
+
+  const { data: klineData } = useQuery<IKlineWebsocket>({
+    queryKey: [exchange, symbol, interval],
+    staleTime: Infinity, 
+    enabled: !!symbol && !!interval, 
+  });
+
+
+  useEffect(() => {
+    if (!klineData) return;
+    const kline = klineData;
+    const originalTimestamp = Math.floor(kline.time);
+    const kstTimestamp = originalTimestamp + 9 * 60 * 60;
+    const alignedTime = Math.floor(kstTimestamp / 3600) * 3600;
+    const formattedData = {
+      time: alignedTime as Time,
+      value: parseFloat(kline.close),
+    };
+
+    setChartData((prevData) => {
+      const lastDataPoint = prevData[prevData.length - 1];
+      if (lastDataPoint && lastDataPoint.time === formattedData.time) {
+        const updatedData = [...prevData];
+        updatedData[updatedData.length - 1] = formattedData;
+        lineSeriesRef.current?.setData(updatedData);
+        return updatedData;
+      }
+
+       // Ensure new data is in ascending order by time
+      if (lastDataPoint && formattedData.time < lastDataPoint.time) {
+        return prevData; // Ignore out-of-order data
+      }
+    
+      const newData = [...prevData, formattedData];
+      lineSeriesRef.current?.setData(newData);
+      return newData;
+    });
+  }, [klineData]);
+
+  return <div ref={chartContainerRef} />;
 };
 
 export default TradingViewChart;
